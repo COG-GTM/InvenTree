@@ -90,7 +90,7 @@
         "mantine-contextmenu": "^8.2.0",
         "mantine-datatable": "^8.2.0",
         "qrcode": "^1.5.4",
-        "react": "^19.1.1",
+        "react": "^19.2.0",
         "react-dom": "^19.1.1",
         "react-grid-layout": "1.4.4",
         "react-hook-form": "^7.62.0",
