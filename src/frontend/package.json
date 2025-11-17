@@ -71,7 +71,7 @@
         "@mantine/spotlight": "^8.2.7",
         "@mantine/vanilla-extract": "^8.2.7",
         "@messageformat/date-skeleton": "^1.1.0",
-        "@sentry/react": "^10.7.0",
+        "@sentry/react": "^10.22.0",
         "@tabler/icons-react": "^3.17.0",
         "@tanstack/react-query": "^5.56.2",
         "@uiw/codemirror-theme-vscode": "4.25.1",
