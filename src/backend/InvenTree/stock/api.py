@@ -68,6 +68,7 @@ from stock.models import (
     StockLocationType,
 )
 from stock.status_codes import StockHistoryCode, StockStatus
+from stock.supply_chain_api import supply_chain_api_urls
 
 
 class GenerateBatchCode(GenericAPIView):
@@ -1714,4 +1715,6 @@ stock_api_urls = [
     ),
     # Anything else
     path('', StockList.as_view(), name='api-stock-list'),
+    # Supply Chain Enhancement endpoints (BEP MES Contract)
+    *supply_chain_api_urls,
 ]
