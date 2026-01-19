@@ -13,6 +13,7 @@ from InvenTree.filters import SEARCH_ORDER_FILTER
 from InvenTree.mixins import ListCreateAPI, RetrieveUpdateAPI, RetrieveUpdateDestroyAPI
 from machine import registry
 from machine.models import MachineConfig, MachineSetting
+from machine.telemetry_api import machine_telemetry_api_urls
 
 
 class MachineList(ListCreateAPI):
@@ -241,6 +242,8 @@ machine_api_urls = [
             ),
             # restart
             path('restart/', MachineRestart.as_view(), name='api-machine-restart'),
+            # telemetry endpoints (Industry 4.0 Machine Integration for BEP MES)
+            *machine_telemetry_api_urls,
             # detail
             path('', MachineDetail.as_view(), name='api-machine-detail'),
         ]),
