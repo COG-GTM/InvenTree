@@ -1,8 +1,13 @@
 """JSON API for the machine app."""
 
+from datetime import timedelta
+
+from django.db.models import Max
 from django.urls import include, path, re_path
+from django.utils import timezone
 
 from drf_spectacular.utils import extend_schema
+from rest_framework import status
 from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,7 +17,13 @@ import machine.serializers as MachineSerializers
 from InvenTree.filters import SEARCH_ORDER_FILTER
 from InvenTree.mixins import ListCreateAPI, RetrieveUpdateAPI, RetrieveUpdateDestroyAPI
 from machine import registry
-from machine.models import MachineConfig, MachineSetting
+from machine.models import (
+    MachineConfig,
+    MachineSetting,
+    MachineTelemetry,
+    TelemetryAlert,
+    TelemetryThreshold,
+)
 
 
 class MachineList(ListCreateAPI):
@@ -216,6 +227,309 @@ class RegistryStatusView(APIView):
         return Response(result)
 
 
+class MachineTelemetryList(ListCreateAPI):
+    """API endpoint for machine telemetry data.
+
+    - GET: Return a list of telemetry data with filtering
+    - POST: Create a new telemetry data point
+    """
+
+    queryset = MachineTelemetry.objects.all()
+    serializer_class = MachineSerializers.MachineTelemetrySerializer
+
+    filter_backends = SEARCH_ORDER_FILTER
+
+    filterset_fields = ['machine_config', 'metric_type', 'metric_name']
+
+    ordering_fields = ['timestamp', 'metric_type', 'value', 'created']
+
+    ordering = ['-timestamp']
+
+    search_fields = ['metric_name']
+
+    def get_queryset(self):
+        """Filter queryset based on query parameters."""
+        queryset = super().get_queryset()
+
+        # Filter by machine_config UUID
+        machine_pk = self.request.query_params.get('machine_config', None)
+        if machine_pk:
+            queryset = queryset.filter(machine_config__pk=machine_pk)
+
+        # Filter by time range
+        start_time = self.request.query_params.get('start_time', None)
+        end_time = self.request.query_params.get('end_time', None)
+
+        if start_time:
+            queryset = queryset.filter(timestamp__gte=start_time)
+        if end_time:
+            queryset = queryset.filter(timestamp__lte=end_time)
+
+        # Filter by last N hours
+        last_hours = self.request.query_params.get('last_hours', None)
+        if last_hours:
+            try:
+                hours = int(last_hours)
+                threshold = timezone.now() - timedelta(hours=hours)
+                queryset = queryset.filter(timestamp__gte=threshold)
+            except (ValueError, TypeError):
+                pass
+
+        return queryset
+
+
+class MachineTelemetryDetail(RetrieveUpdateDestroyAPI):
+    """API detail endpoint for MachineTelemetry object.
+
+    - GET: return a single telemetry data point
+    - PUT: update a telemetry data point
+    - PATCH: partial update a telemetry data point
+    - DELETE: delete a telemetry data point
+    """
+
+    queryset = MachineTelemetry.objects.all()
+    serializer_class = MachineSerializers.MachineTelemetrySerializer
+
+
+class MachineTelemetryBatch(APIView):
+    """API endpoint for batch telemetry data submission.
+
+    - POST: Submit multiple telemetry data points in a single request
+    """
+
+    permission_classes = [InvenTree.permissions.IsAuthenticatedOrReadScope]
+
+    @extend_schema(
+        request=MachineSerializers.MachineTelemetryBatchSerializer,
+        responses={201: MachineSerializers.MachineTelemetryBatchSerializer},
+    )
+    def post(self, request):
+        """Submit batch telemetry data."""
+        serializer = MachineSerializers.MachineTelemetryBatchSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+            result = serializer.save()
+            response_serializer = MachineSerializers.MachineTelemetryBatchSerializer(
+                result
+            )
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class MachineTelemetryStatus(APIView):
+    """API endpoint for machine telemetry status summary.
+
+    - GET: Get telemetry status summary for a machine or all machines
+    """
+
+    permission_classes = [InvenTree.permissions.IsAuthenticatedOrReadScope]
+
+    @extend_schema(
+        responses={200: MachineSerializers.MachineTelemetryStatusSerializer(many=True)}
+    )
+    def get(self, request, pk=None):
+        """Get telemetry status summary."""
+        now = timezone.now()
+        last_24h = now - timedelta(hours=24)
+
+        if pk:
+            # Get status for a specific machine
+            try:
+                machine_config = MachineConfig.objects.get(pk=pk)
+            except MachineConfig.DoesNotExist:
+                raise NotFound(detail=f"Machine '{pk}' not found")
+
+            machines = [machine_config]
+        else:
+            # Get status for all active machines
+            machines = MachineConfig.objects.filter(active=True)
+
+        status_list = []
+        for machine in machines:
+            # Get latest telemetry for each metric type
+            latest_telemetry = []
+            for metric_type in MachineTelemetry.MetricType.values:
+                latest = (
+                    MachineTelemetry.objects.filter(
+                        machine_config=machine, metric_type=metric_type
+                    )
+                    .order_by('-timestamp')
+                    .first()
+                )
+                if latest:
+                    latest_telemetry.append(latest)
+
+            # Get alert counts
+            active_alerts = TelemetryAlert.objects.filter(
+                machine_config=machine
+            ).count()
+
+            unacknowledged_alerts = TelemetryAlert.objects.filter(
+                machine_config=machine, acknowledged=False
+            ).count()
+
+            # Get last telemetry timestamp
+            last_telemetry = MachineTelemetry.objects.filter(
+                machine_config=machine
+            ).aggregate(last_timestamp=Max('timestamp'))
+
+            # Get telemetry count in last 24 hours
+            telemetry_count_24h = MachineTelemetry.objects.filter(
+                machine_config=machine, timestamp__gte=last_24h
+            ).count()
+
+            status_data = {
+                'machine_config': machine.pk,
+                'machine_name': machine.name,
+                'latest_telemetry': latest_telemetry,
+                'active_alerts_count': active_alerts,
+                'unacknowledged_alerts_count': unacknowledged_alerts,
+                'last_telemetry_timestamp': last_telemetry['last_timestamp'],
+                'telemetry_count_24h': telemetry_count_24h,
+            }
+            status_list.append(status_data)
+
+        serializer = MachineSerializers.MachineTelemetryStatusSerializer(
+            status_list, many=True
+        )
+        return Response(serializer.data)
+
+
+class TelemetryAlertList(ListCreateAPI):
+    """API endpoint for telemetry alerts.
+
+    - GET: Return a list of telemetry alerts with filtering
+    - POST: Create a new telemetry alert
+    """
+
+    queryset = TelemetryAlert.objects.all()
+    serializer_class = MachineSerializers.TelemetryAlertSerializer
+
+    filter_backends = SEARCH_ORDER_FILTER
+
+    filterset_fields = ['machine_config', 'alert_type', 'severity', 'acknowledged']
+
+    ordering_fields = ['created', 'severity', 'alert_type']
+
+    ordering = ['-created']
+
+    search_fields = ['message', 'metric_name']
+
+    def get_queryset(self):
+        """Filter queryset based on query parameters."""
+        queryset = super().get_queryset()
+
+        # Filter by machine_config UUID
+        machine_pk = self.request.query_params.get('machine_config', None)
+        if machine_pk:
+            queryset = queryset.filter(machine_config__pk=machine_pk)
+
+        # Filter by unacknowledged only
+        unacknowledged_only = self.request.query_params.get('unacknowledged_only', None)
+        if unacknowledged_only and unacknowledged_only.lower() in ('true', '1', 'yes'):
+            queryset = queryset.filter(acknowledged=False)
+
+        # Filter by time range
+        start_time = self.request.query_params.get('start_time', None)
+        end_time = self.request.query_params.get('end_time', None)
+
+        if start_time:
+            queryset = queryset.filter(created__gte=start_time)
+        if end_time:
+            queryset = queryset.filter(created__lte=end_time)
+
+        return queryset
+
+
+class TelemetryAlertDetail(RetrieveUpdateDestroyAPI):
+    """API detail endpoint for TelemetryAlert object.
+
+    - GET: return a single alert
+    - PUT: update an alert
+    - PATCH: partial update an alert
+    - DELETE: delete an alert
+    """
+
+    queryset = TelemetryAlert.objects.all()
+    serializer_class = MachineSerializers.TelemetryAlertSerializer
+
+
+class TelemetryAlertAcknowledge(APIView):
+    """API endpoint for acknowledging telemetry alerts.
+
+    - POST: Acknowledge an alert
+    """
+
+    permission_classes = [InvenTree.permissions.IsAuthenticatedOrReadScope]
+
+    @extend_schema(
+        request=MachineSerializers.TelemetryAlertAcknowledgeSerializer,
+        responses={200: MachineSerializers.TelemetryAlertSerializer},
+    )
+    def post(self, request, pk):
+        """Acknowledge a telemetry alert."""
+        try:
+            alert = TelemetryAlert.objects.get(pk=pk)
+        except TelemetryAlert.DoesNotExist:
+            raise NotFound(detail=f"Alert '{pk}' not found")
+
+        serializer = MachineSerializers.TelemetryAlertAcknowledgeSerializer(
+            data=request.data
+        )
+
+        if serializer.is_valid():
+            if serializer.validated_data.get('acknowledged', True):
+                alert.acknowledge(request.user)
+            else:
+                # Un-acknowledge the alert
+                alert.acknowledged = False
+                alert.acknowledged_by = None
+                alert.acknowledged_at = None
+                alert.save()
+
+            response_serializer = MachineSerializers.TelemetryAlertSerializer(alert)
+            return Response(response_serializer.data)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class TelemetryThresholdList(ListCreateAPI):
+    """API endpoint for telemetry thresholds.
+
+    - GET: Return a list of telemetry thresholds
+    - POST: Create a new telemetry threshold
+    """
+
+    queryset = TelemetryThreshold.objects.all()
+    serializer_class = MachineSerializers.TelemetryThresholdSerializer
+
+    filter_backends = SEARCH_ORDER_FILTER
+
+    filterset_fields = ['machine_config', 'metric_type', 'enabled']
+
+    ordering_fields = ['created', 'metric_type']
+
+    ordering = ['-created']
+
+    search_fields = ['metric_name']
+
+
+class TelemetryThresholdDetail(RetrieveUpdateDestroyAPI):
+    """API detail endpoint for TelemetryThreshold object.
+
+    - GET: return a single threshold
+    - PUT: update a threshold
+    - PATCH: partial update a threshold
+    - DELETE: delete a threshold
+    """
+
+    queryset = TelemetryThreshold.objects.all()
+    serializer_class = MachineSerializers.TelemetryThresholdSerializer
+
+
 machine_api_urls = [
     # machine types
     path('types/', MachineTypesList.as_view(), name='api-machine-types'),
@@ -223,6 +537,70 @@ machine_api_urls = [
     path('drivers/', MachineDriverList.as_view(), name='api-machine-drivers'),
     # registry status
     path('status/', RegistryStatusView.as_view(), name='api-machine-registry-status'),
+    # telemetry endpoints
+    path(
+        'telemetry/',
+        include([
+            # batch submission
+            path(
+                'batch/',
+                MachineTelemetryBatch.as_view(),
+                name='api-machine-telemetry-batch',
+            ),
+            # status summary for all machines
+            path(
+                'status/',
+                MachineTelemetryStatus.as_view(),
+                name='api-machine-telemetry-status',
+            ),
+            # detail view for a single telemetry record
+            path(
+                '<int:pk>/',
+                MachineTelemetryDetail.as_view(),
+                name='api-machine-telemetry-detail',
+            ),
+            # list and create telemetry
+            path('', MachineTelemetryList.as_view(), name='api-machine-telemetry-list'),
+        ]),
+    ),
+    # telemetry alerts endpoints
+    path(
+        'alerts/',
+        include([
+            # acknowledge alert
+            path(
+                '<int:pk>/acknowledge/',
+                TelemetryAlertAcknowledge.as_view(),
+                name='api-telemetry-alert-acknowledge',
+            ),
+            # detail view for a single alert
+            path(
+                '<int:pk>/',
+                TelemetryAlertDetail.as_view(),
+                name='api-telemetry-alert-detail',
+            ),
+            # list and create alerts
+            path('', TelemetryAlertList.as_view(), name='api-telemetry-alert-list'),
+        ]),
+    ),
+    # telemetry thresholds endpoints
+    path(
+        'thresholds/',
+        include([
+            # detail view for a single threshold
+            path(
+                '<int:pk>/',
+                TelemetryThresholdDetail.as_view(),
+                name='api-telemetry-threshold-detail',
+            ),
+            # list and create thresholds
+            path(
+                '',
+                TelemetryThresholdList.as_view(),
+                name='api-telemetry-threshold-list',
+            ),
+        ]),
+    ),
     # detail views for a single Machine
     path(
         '<uuid:pk>/',
@@ -238,6 +616,12 @@ machine_api_urls = [
                     ),
                     path('', MachineSettingList.as_view(), name='api-machine-settings'),
                 ]),
+            ),
+            # telemetry status for specific machine
+            path(
+                'telemetry/status/',
+                MachineTelemetryStatus.as_view(),
+                name='api-machine-telemetry-status-detail',
             ),
             # restart
             path('restart/', MachineRestart.as_view(), name='api-machine-restart'),
