@@ -1,13 +1,24 @@
 """Serializers for the machine app."""
 
+import re
+from datetime import timedelta
 from typing import Union
+
+from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from rest_framework import serializers
 
 from common.serializers import GenericReferencedSettingSerializer
 from InvenTree.helpers_mixin import ClassProviderMixin
 from machine import registry
-from machine.models import MachineConfig, MachineSetting
+from machine.models import (
+    MachineConfig,
+    MachineSetting,
+    MachineTelemetry,
+    TelemetryAlert,
+    TelemetryThreshold,
+)
 
 
 class MachineConfigSerializer(serializers.ModelSerializer):
@@ -205,3 +216,278 @@ class MachineRestartSerializer(serializers.Serializer):
         fields = ['ok']
 
     ok = serializers.BooleanField()
+
+
+class MachineTelemetrySerializer(serializers.ModelSerializer):
+    """Serializer for MachineTelemetry model."""
+
+    class Meta:
+        """Meta for serializer."""
+
+        model = MachineTelemetry
+        fields = [
+            'pk',
+            'machine_config',
+            'timestamp',
+            'metric_type',
+            'metric_name',
+            'value',
+            'unit',
+            'metadata',
+            'created',
+        ]
+        read_only_fields = ['pk', 'created']
+
+    def validate_metric_name(self, value):
+        """Validate and sanitize metric_name field."""
+        if not value:
+            raise serializers.ValidationError(_('Metric name is required'))
+
+        # Sanitize: remove dangerous characters
+        sanitized = re.sub(r'[<>"\';&|`$()]', '', value.strip())
+
+        # Validate format
+        if not MachineTelemetry.METRIC_NAME_PATTERN.match(sanitized):
+            raise serializers.ValidationError(
+                _(
+                    'Metric name must start with a letter and contain only '
+                    'alphanumeric characters, underscores, or hyphens (max 100 chars)'
+                )
+            )
+
+        return sanitized
+
+    def validate_timestamp(self, value):
+        """Validate timestamp is within acceptable range."""
+        if not value:
+            raise serializers.ValidationError(_('Timestamp is required'))
+
+        now = timezone.now()
+        max_future = now + timedelta(hours=MachineTelemetry.MAX_TIMESTAMP_FUTURE_HOURS)
+        max_past = now - timedelta(days=MachineTelemetry.MAX_TIMESTAMP_PAST_DAYS)
+
+        if value > max_future:
+            raise serializers.ValidationError(
+                _('Timestamp cannot be more than %(hours)s hour(s) in the future')
+                % {'hours': MachineTelemetry.MAX_TIMESTAMP_FUTURE_HOURS}
+            )
+
+        if value < max_past:
+            raise serializers.ValidationError(
+                _('Timestamp cannot be more than %(days)s day(s) in the past')
+                % {'days': MachineTelemetry.MAX_TIMESTAMP_PAST_DAYS}
+            )
+
+        return value
+
+    def validate_unit(self, value):
+        """Sanitize unit field."""
+        if value:
+            return re.sub(r'[<>"\';&|`$()]', '', value.strip())[:50]
+        return value
+
+    def validate_metadata(self, value):
+        """Validate metadata is a dictionary if provided."""
+        if value is not None and not isinstance(value, dict):
+            raise serializers.ValidationError(
+                _('Metadata must be a JSON object (dictionary)')
+            )
+        return value
+
+    def validate_machine_config(self, value):
+        """Validate machine exists and is active."""
+        if not value.active:
+            raise serializers.ValidationError(
+                _('Cannot submit telemetry for inactive machine')
+            )
+        return value
+
+
+class MachineTelemetryBatchSerializer(serializers.Serializer):
+    """Serializer for batch telemetry data submission."""
+
+    class Meta:
+        """Meta for serializer."""
+
+        fields = ['telemetry_data']
+
+    telemetry_data = MachineTelemetrySerializer(many=True)
+
+    def validate_telemetry_data(self, value):
+        """Validate batch telemetry data."""
+        if not value:
+            raise serializers.ValidationError(
+                _('At least one telemetry data point is required')
+            )
+
+        if len(value) > 1000:
+            raise serializers.ValidationError(
+                _('Maximum of 1000 telemetry data points allowed per batch')
+            )
+
+        return value
+
+    def create(self, validated_data):
+        """Create multiple telemetry records."""
+        telemetry_items = validated_data.get('telemetry_data', [])
+        created_items = []
+
+        for item_data in telemetry_items:
+            telemetry = MachineTelemetry.objects.create(**item_data)
+            created_items.append(telemetry)
+
+        return {'telemetry_data': created_items}
+
+
+class TelemetryAlertSerializer(serializers.ModelSerializer):
+    """Serializer for TelemetryAlert model."""
+
+    class Meta:
+        """Meta for serializer."""
+
+        model = TelemetryAlert
+        fields = [
+            'pk',
+            'machine_config',
+            'alert_type',
+            'severity',
+            'metric_type',
+            'metric_name',
+            'message',
+            'threshold_value',
+            'actual_value',
+            'telemetry_data',
+            'acknowledged',
+            'acknowledged_by',
+            'acknowledged_at',
+            'created',
+            'metadata',
+        ]
+        read_only_fields = ['pk', 'created', 'acknowledged_by', 'acknowledged_at']
+
+    def validate_message(self, value):
+        """Sanitize message field."""
+        if value:
+            return re.sub(r'[<>"\';&|`$()]', '', value.strip())
+        return value
+
+    def validate_metric_name(self, value):
+        """Sanitize metric_name field."""
+        if value:
+            return re.sub(r'[<>"\';&|`$()]', '', value.strip())
+        return value
+
+    def validate_metadata(self, value):
+        """Validate metadata is a dictionary if provided."""
+        if value is not None and not isinstance(value, dict):
+            raise serializers.ValidationError(
+                _('Metadata must be a JSON object (dictionary)')
+            )
+        return value
+
+
+class TelemetryAlertAcknowledgeSerializer(serializers.Serializer):
+    """Serializer for acknowledging telemetry alerts."""
+
+    class Meta:
+        """Meta for serializer."""
+
+        fields = ['acknowledged']
+
+    acknowledged = serializers.BooleanField(default=True)
+
+
+class TelemetryThresholdSerializer(serializers.ModelSerializer):
+    """Serializer for TelemetryThreshold model."""
+
+    class Meta:
+        """Meta for serializer."""
+
+        model = TelemetryThreshold
+        fields = [
+            'pk',
+            'machine_config',
+            'metric_type',
+            'metric_name',
+            'min_value',
+            'max_value',
+            'warning_min',
+            'warning_max',
+            'rate_of_change_threshold',
+            'enabled',
+            'created',
+            'updated',
+        ]
+        read_only_fields = ['pk', 'created', 'updated']
+
+    def validate_metric_name(self, value):
+        """Sanitize metric_name field."""
+        if value:
+            return re.sub(r'[<>"\';&|`$()]', '', value.strip())
+        return value
+
+    def validate(self, data):
+        """Validate threshold configuration."""
+        # Validate that at least one threshold is set
+        if (
+            data.get('min_value') is None
+            and data.get('max_value') is None
+            and data.get('warning_min') is None
+            and data.get('warning_max') is None
+            and data.get('rate_of_change_threshold') is None
+        ):
+            raise serializers.ValidationError(
+                _('At least one threshold value must be configured')
+            )
+
+        # Validate min/max relationship
+        min_val = data.get('min_value')
+        max_val = data.get('max_value')
+        if min_val is not None and max_val is not None:
+            if min_val >= max_val:
+                raise serializers.ValidationError({
+                    'min_value': _('Minimum value must be less than maximum value')
+                })
+
+        # Validate warning thresholds are within min/max
+        warning_min = data.get('warning_min')
+        warning_max = data.get('warning_max')
+
+        if warning_min is not None and min_val is not None:
+            if warning_min < min_val:
+                raise serializers.ValidationError({
+                    'warning_min': _('Warning minimum must be >= minimum value')
+                })
+
+        if warning_max is not None and max_val is not None:
+            if warning_max > max_val:
+                raise serializers.ValidationError({
+                    'warning_max': _('Warning maximum must be <= maximum value')
+                })
+
+        return data
+
+
+class MachineTelemetryStatusSerializer(serializers.Serializer):
+    """Serializer for machine telemetry status summary."""
+
+    class Meta:
+        """Meta for serializer."""
+
+        fields = [
+            'machine_config',
+            'machine_name',
+            'latest_telemetry',
+            'active_alerts_count',
+            'unacknowledged_alerts_count',
+            'last_telemetry_timestamp',
+            'telemetry_count_24h',
+        ]
+
+    machine_config = serializers.UUIDField()
+    machine_name = serializers.CharField()
+    latest_telemetry = MachineTelemetrySerializer(many=True, read_only=True)
+    active_alerts_count = serializers.IntegerField()
+    unacknowledged_alerts_count = serializers.IntegerField()
+    last_telemetry_timestamp = serializers.DateTimeField(allow_null=True)
+    telemetry_count_24h = serializers.IntegerField()
