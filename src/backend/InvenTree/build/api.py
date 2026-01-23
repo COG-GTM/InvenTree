@@ -44,7 +44,7 @@ class BuildFilter(FilterSet):
         """Metaclass options."""
 
         model = Build
-        fields = ['issued_by', 'sales_order', 'external']
+        fields = ['issued_by', 'sales_order', 'external', 'production_line', 'shift']
 
     status = rest_filters.NumberFilter(label=_('Order Status'), method='filter_status')
 
@@ -352,6 +352,8 @@ class BuildList(DataExportViewMixin, BuildMixin, ListCreateAPI):
         'priority',
         'level',
         'external',
+        'production_line',
+        'shift',
     ]
 
     ordering_field_aliases = {
@@ -369,6 +371,8 @@ class BuildList(DataExportViewMixin, BuildMixin, ListCreateAPI):
         'part__description',
         'project_code__code',
         'priority',
+        'production_line',
+        'shift',
     ]
 
     def get_queryset(self):

@@ -550,6 +550,58 @@ class BuildTest(BuildAPITest):
 
         self.assertEqual(bo.children.count(), 0)
 
+    def test_production_tracking_fields(self):
+        """Test creation and update of build orders with production tracking fields."""
+        url = reverse('api-build-list')
+
+        part = Part.objects.create(
+            name='Production Part', description='Part for production tracking test', assembly=True
+        )
+
+        response = self.post(
+            url,
+            {
+                'reference': 'BO-9001',
+                'part': part.pk,
+                'quantity': 50,
+                'title': 'Production tracking test',
+                'production_line': 'Line-A1',
+                'shift': 'Day',
+            },
+            expected_code=201,
+        )
+
+        bo = Build.objects.get(pk=response.data['pk'])
+        self.assertEqual(bo.production_line, 'Line-A1')
+        self.assertEqual(bo.shift, 'Day')
+
+        detail_url = reverse('api-build-detail', kwargs={'pk': bo.pk})
+        response = self.patch(
+            detail_url,
+            {
+                'production_line': 'Line-B2',
+                'shift': 'Night',
+            },
+            expected_code=200,
+        )
+
+        bo.refresh_from_db()
+        self.assertEqual(bo.production_line, 'Line-B2')
+        self.assertEqual(bo.shift, 'Night')
+
+        response = self.get(url, {'production_line': 'Line-B2'}, expected_code=200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['pk'], bo.pk)
+
+        response = self.get(url, {'shift': 'Night'}, expected_code=200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['pk'], bo.pk)
+
+        response = self.get(url, {'search': 'Line-B2'}, expected_code=200)
+        self.assertGreaterEqual(len(response.data), 1)
+        pks = [item['pk'] for item in response.data]
+        self.assertIn(bo.pk, pks)
+
 
 class BuildAllocationTest(BuildAPITest):
     """Unit tests for allocation of stock items against a build order.

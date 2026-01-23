@@ -423,6 +423,22 @@ class Build(
         help_text=_('Project code for this build order'),
     )
 
+    production_line = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name=_('Production Line'),
+        help_text=_('Production line or work center for this build order'),
+    )
+
+    shift = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name=_('Shift'),
+        help_text=_('Production shift (e.g., Day, Night, A, B, C)'),
+    )
+
     def sub_builds(self, cascade: bool = True) -> QuerySet:
         """Return all Build Order objects under this one."""
         if cascade:

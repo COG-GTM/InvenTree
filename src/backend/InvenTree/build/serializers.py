@@ -100,6 +100,8 @@ class BuildSerializer(
             'responsible_detail',
             'priority',
             'level',
+            'production_line',
+            'shift',
         ]
 
         read_only_fields = [
