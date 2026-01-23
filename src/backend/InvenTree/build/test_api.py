@@ -1529,3 +1529,95 @@ class BuildConsumeTest(BuildAPITest):
 
         for line in self.build.build_lines.all():
             self.assertEqual(line.consumed, 100)
+
+
+class ProductionMetricsTest(InvenTreeAPITestCase):
+    """Tests for the Production Metrics API endpoints."""
+
+    fixtures = ['category', 'part', 'location', 'build', 'stock']
+
+    roles = ['build.view']
+
+    def test_metrics_summary(self):
+        """Test the production metrics summary endpoint."""
+        url = reverse('api-build-metrics-summary')
+
+        response = self.get(url, expected_code=200)
+
+        self.assertIn('total_builds', response.data)
+        self.assertIn('status_breakdown', response.data)
+        self.assertIn('completion_rate', response.data)
+        self.assertIn('quantity_metrics', response.data)
+        self.assertIn('overdue_builds', response.data)
+
+        self.assertIn('completed', response.data['status_breakdown'])
+        self.assertIn('pending', response.data['status_breakdown'])
+        self.assertIn('production', response.data['status_breakdown'])
+
+        self.assertIn('total_ordered', response.data['quantity_metrics'])
+        self.assertIn('total_completed', response.data['quantity_metrics'])
+
+    def test_metrics_summary_with_date_filter(self):
+        """Test the production metrics summary endpoint with date filters."""
+        url = reverse('api-build-metrics-summary')
+
+        response = self.get(
+            url,
+            {'start_date': '2020-01-01', 'end_date': '2030-12-31'},
+            expected_code=200
+        )
+
+        self.assertIn('total_builds', response.data)
+
+    def test_metrics_by_part(self):
+        """Test the production metrics by part endpoint."""
+        url = reverse('api-build-metrics-by-part')
+
+        response = self.get(url, expected_code=200)
+
+        self.assertIn('results', response.data)
+        self.assertIsInstance(response.data['results'], list)
+
+        if len(response.data['results']) > 0:
+            first_result = response.data['results'][0]
+            self.assertIn('part_id', first_result)
+            self.assertIn('part_name', first_result)
+            self.assertIn('build_count', first_result)
+            self.assertIn('total_quantity', first_result)
+            self.assertIn('completion_rate', first_result)
+
+    def test_metrics_by_part_with_limit(self):
+        """Test the production metrics by part endpoint with limit parameter."""
+        url = reverse('api-build-metrics-by-part')
+
+        response = self.get(url, {'limit': 5}, expected_code=200)
+
+        self.assertIn('results', response.data)
+        self.assertLessEqual(len(response.data['results']), 5)
+
+    def test_metrics_trend(self):
+        """Test the production metrics trend endpoint."""
+        url = reverse('api-build-metrics-trend')
+
+        response = self.get(url, expected_code=200)
+
+        self.assertIn('start_date', response.data)
+        self.assertIn('end_date', response.data)
+        self.assertIn('period', response.data)
+        self.assertIn('results', response.data)
+
+        self.assertEqual(response.data['period'], 'day')
+
+    def test_metrics_trend_with_period(self):
+        """Test the production metrics trend endpoint with different periods."""
+        url = reverse('api-build-metrics-trend')
+
+        for period in ['day', 'week', 'month']:
+            response = self.get(
+                url,
+                {'period': period, 'start_date': '2020-01-01', 'end_date': '2030-12-31'},
+                expected_code=200
+            )
+
+            self.assertEqual(response.data['period'], period)
+            self.assertIn('results', response.data)

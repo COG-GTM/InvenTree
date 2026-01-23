@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Optional
 
 from django.contrib.auth.models import User
-from django.db.models import F, Q
+from django.db.models import Avg, Count, F, Q, Sum
+from django.db.models.functions import TruncDate, TruncMonth, TruncWeek
 from django.urls import include, path
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from django_filters import rest_framework as rest_filters
 from django_filters.rest_framework.filterset import FilterSet
 from drf_spectacular.utils import extend_schema, extend_schema_field
-from rest_framework import serializers, status
+from rest_framework import permissions, serializers, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 import build.models as build_models
 import build.serializers
@@ -942,7 +946,260 @@ class BuildItemList(DataExportViewMixin, BulkDeleteMixin, ListCreateAPI):
     ]
 
 
+class ProductionMetricsSummary(APIView):
+    """API endpoint for production metrics summary.
+
+    Provides aggregated statistics about build orders including:
+    - Total build orders by status
+    - Completion rates
+    - Average build times
+    - Production volume metrics
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        """Return production metrics summary."""
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        queryset = Build.objects.all()
+
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
+                queryset = queryset.filter(creation_date__gte=start_dt)
+            except ValueError:
+                pass
+
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
+                queryset = queryset.filter(creation_date__lte=end_dt)
+            except ValueError:
+                pass
+
+        total_builds = queryset.count()
+        completed_builds = queryset.filter(status=BuildStatus.COMPLETE.value).count()
+        pending_builds = queryset.filter(status=BuildStatus.PENDING.value).count()
+        production_builds = queryset.filter(status=BuildStatus.PRODUCTION.value).count()
+        cancelled_builds = queryset.filter(status=BuildStatus.CANCELLED.value).count()
+        on_hold_builds = queryset.filter(status=BuildStatus.ON_HOLD.value).count()
+
+        completion_rate = (completed_builds / total_builds * 100) if total_builds > 0 else 0
+
+        total_quantity_ordered = queryset.aggregate(total=Sum('quantity'))['total'] or 0
+        total_quantity_completed = queryset.aggregate(total=Sum('completed'))['total'] or 0
+
+        quantity_completion_rate = (
+            (total_quantity_completed / total_quantity_ordered * 100)
+            if total_quantity_ordered > 0
+            else 0
+        )
+
+        overdue_builds = queryset.filter(
+            target_date__lt=timezone.now().date(),
+            status__in=BuildStatusGroups.ACTIVE_CODES
+        ).count()
+
+        return Response({
+            'total_builds': total_builds,
+            'status_breakdown': {
+                'completed': completed_builds,
+                'pending': pending_builds,
+                'production': production_builds,
+                'cancelled': cancelled_builds,
+                'on_hold': on_hold_builds,
+            },
+            'completion_rate': round(completion_rate, 2),
+            'quantity_metrics': {
+                'total_ordered': total_quantity_ordered,
+                'total_completed': total_quantity_completed,
+                'completion_rate': round(quantity_completion_rate, 2),
+            },
+            'overdue_builds': overdue_builds,
+        })
+
+
+class ProductionMetricsByPart(APIView):
+    """API endpoint for production metrics grouped by part.
+
+    Returns build order statistics aggregated by part, useful for
+    identifying high-volume parts and production patterns.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        """Return production metrics grouped by part."""
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        limit = request.query_params.get('limit', 20)
+
+        try:
+            limit = int(limit)
+        except ValueError:
+            limit = 20
+
+        queryset = Build.objects.all()
+
+        if start_date:
+            try:
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
+                queryset = queryset.filter(creation_date__gte=start_dt)
+            except ValueError:
+                pass
+
+        if end_date:
+            try:
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
+                queryset = queryset.filter(creation_date__lte=end_dt)
+            except ValueError:
+                pass
+
+        metrics = queryset.values(
+            'part__pk',
+            'part__name',
+            'part__IPN',
+        ).annotate(
+            build_count=Count('pk'),
+            total_quantity=Sum('quantity'),
+            completed_quantity=Sum('completed'),
+            avg_quantity=Avg('quantity'),
+        ).order_by('-build_count')[:limit]
+
+        results = []
+        for item in metrics:
+            completion_rate = (
+                (item['completed_quantity'] / item['total_quantity'] * 100)
+                if item['total_quantity'] and item['total_quantity'] > 0
+                else 0
+            )
+            results.append({
+                'part_id': item['part__pk'],
+                'part_name': item['part__name'],
+                'part_ipn': item['part__IPN'],
+                'build_count': item['build_count'],
+                'total_quantity': item['total_quantity'] or 0,
+                'completed_quantity': item['completed_quantity'] or 0,
+                'avg_quantity': round(item['avg_quantity'] or 0, 2),
+                'completion_rate': round(completion_rate, 2),
+            })
+
+        return Response({'results': results})
+
+
+class ProductionMetricsTrend(APIView):
+    """API endpoint for production metrics over time.
+
+    Returns build order statistics aggregated by time period (day, week, or month),
+    useful for tracking production trends and forecasting.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        """Return production metrics trend over time."""
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        period = request.query_params.get('period', 'day')
+
+        if not start_date:
+            start_dt = (timezone.now() - timedelta(days=30)).date()
+        else:
+            try:
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
+            except ValueError:
+                start_dt = (timezone.now() - timedelta(days=30)).date()
+
+        if not end_date:
+            end_dt = timezone.now().date()
+        else:
+            try:
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
+                end_dt = timezone.now().date()
+
+        queryset = Build.objects.filter(
+            creation_date__gte=start_dt,
+            creation_date__lte=end_dt
+        )
+
+        if period == 'week':
+            trunc_func = TruncWeek('creation_date')
+        elif period == 'month':
+            trunc_func = TruncMonth('creation_date')
+        else:
+            trunc_func = TruncDate('creation_date')
+
+        metrics = queryset.annotate(
+            period=trunc_func
+        ).values('period').annotate(
+            builds_created=Count('pk'),
+            quantity_ordered=Sum('quantity'),
+        ).order_by('period')
+
+        completed_queryset = Build.objects.filter(
+            completion_date__gte=start_dt,
+            completion_date__lte=end_dt,
+            status=BuildStatus.COMPLETE.value
+        )
+
+        if period == 'week':
+            completed_trunc = TruncWeek('completion_date')
+        elif period == 'month':
+            completed_trunc = TruncMonth('completion_date')
+        else:
+            completed_trunc = TruncDate('completion_date')
+
+        completed_metrics = completed_queryset.annotate(
+            period=completed_trunc
+        ).values('period').annotate(
+            builds_completed=Count('pk'),
+            quantity_completed=Sum('completed'),
+        ).order_by('period')
+
+        completed_dict = {
+            item['period']: {
+                'builds_completed': item['builds_completed'],
+                'quantity_completed': item['quantity_completed'] or 0,
+            }
+            for item in completed_metrics
+        }
+
+        results = []
+        for item in metrics:
+            period_date = item['period']
+            completed_data = completed_dict.get(period_date, {
+                'builds_completed': 0,
+                'quantity_completed': 0,
+            })
+            results.append({
+                'period': period_date.isoformat() if period_date else None,
+                'builds_created': item['builds_created'],
+                'builds_completed': completed_data['builds_completed'],
+                'quantity_ordered': item['quantity_ordered'] or 0,
+                'quantity_completed': completed_data['quantity_completed'],
+            })
+
+        return Response({
+            'start_date': start_dt.isoformat(),
+            'end_date': end_dt.isoformat(),
+            'period': period,
+            'results': results,
+        })
+
+
 build_api_urls = [
+    # Production Metrics endpoints
+    path(
+        'metrics/',
+        include([
+            path('summary/', ProductionMetricsSummary.as_view(), name='api-build-metrics-summary'),
+            path('by-part/', ProductionMetricsByPart.as_view(), name='api-build-metrics-by-part'),
+            path('trend/', ProductionMetricsTrend.as_view(), name='api-build-metrics-trend'),
+        ]),
+    ),
     # Build lines
     path(
         'line/',
