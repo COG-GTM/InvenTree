@@ -1852,7 +1852,7 @@
   resolved "https://registry.yarnpkg.com/@tanstack/query-core/-/query-core-5.85.9.tgz#69e800f4d1c42ca4a110469229d8ecca409d477a"
   integrity sha512-5fxb9vwyftYE6KFLhhhDyLr8NO75+Wpu7pmTo+TkwKmMX2oxZDoLwcqGP8ItKSpUMwk3urWgQDZfyWr5Jm9LsQ==
 
-"@tanstack/react-query@^5.56.2":
+"@tanstack/react-query@5.85.9":
   version "5.85.9"
   resolved "https://registry.yarnpkg.com/@tanstack/react-query/-/react-query-5.85.9.tgz#d27315b3f327af31237d513e505f3e6a2cad5739"
   integrity sha512-2T5zgSpcOZXGkH/UObIbIkGmUPQqZqn7esVQFXLOze622h4spgWf5jmvrqAo9dnI13/hyMcNsF1jsoDcb59nJQ==
