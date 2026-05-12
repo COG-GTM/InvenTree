@@ -169,7 +169,7 @@ Currently, the panel displays randomly generated images from https://picsum.phot
 Install TanStack Query in our project via the terminal
 
 ``` Bash
-npm install @tanstack/react-query
+npm install @tanstack/react-query@5.85.9
 ```
 
 Update `Panel.tsx` to add a TanStack `QueryClientProvider` and send the context to the attachment carousel,
