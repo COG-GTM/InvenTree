@@ -199,7 +199,7 @@ def envcheck_python_version():
     If the python version is not sufficient, exits with a non-zero exit code.
     """
     REQ_MAJOR: int = 3
-    REQ_MINOR: int = 9
+    REQ_MINOR: int = 10
 
     version = sys.version.split(' ')[0]
 
