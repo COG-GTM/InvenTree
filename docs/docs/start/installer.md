@@ -5,7 +5,7 @@ title: InvenTree Installer
 ## Installer
 The InvenTree installer automates the installation procedure for a production InvenTree server.
 
-Supported OSs are Debian 11 and Ubuntu 20.04 LTS.
+Supported OSs are Debian 12 and Ubuntu 22.04 LTS.
 
 ### Quick Script
 
@@ -68,7 +68,7 @@ Furthermore there are several command flags for advanced usage:
 
 ### Manual Install
 
-The steps below are for Ubuntu 20.04 LTS, the current instructions for Ubuntu and Debian  can be found [here](https://packager.io/gh/inventree/InvenTree).
+The steps below are for Ubuntu 22.04 LTS, the current instructions for Ubuntu and Debian  can be found [here](https://packager.io/gh/inventree/InvenTree).
 
 Add the key needed for validating the packages.
 ```bash
@@ -77,7 +77,7 @@ wget -qO- https://dl.packager.io/srv/inventree/InvenTree/key | sudo apt-key add 
 
 Add the package list to the package manager source list.
 ```bash
-sudo wget -O /etc/apt/sources.list.d/inventree.list https://dl.packager.io/srv/inventree/InvenTree/stable/installer/ubuntu/20.04.repo
+sudo wget -O /etc/apt/sources.list.d/inventree.list https://dl.packager.io/srv/inventree/InvenTree/stable/installer/ubuntu/22.04.repo
 ```
 
 Update the local package index.

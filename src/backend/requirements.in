@@ -1,7 +1,7 @@
 # Please keep this list sorted - if you pin a version provide a reason
-Django<5.0                              # Django package
+Django>=4.2.30,<5.0                     # Django package
 blessed                                 # CLI for Q Monitor
-cryptography>=44.0.0                    # Core cryptographic functionality
+cryptography>=50.0.0                    # Core cryptographic functionality
 django-anymail[amazon_ses,postal]       # Email backend for various providers
 django-allauth[mfa,socialaccount,saml,openid]   # SSO for external providers via OpenID
 django-cleanup                          # Automated deletion of old / unused uploaded files
@@ -32,18 +32,18 @@ django-oauth-toolkit                    # OAuth2 provider
 djangorestframework                     # DRF framework
 djangorestframework-simplejwt[crypto]   # JWT authentication
 django-xforwardedfor-middleware         # IP forwarding metadata
-dulwich                                 # pure Python git integration
+dulwich>=1.2.5                          # pure Python git integration
 docutils                                # Documentation utilities for auto admin docs
 drf-spectacular                         # DRF API documentation
 feedparser                              # RSS newsfeed parser
 gunicorn                                # Gunicorn web server
 jinja2                                  # Jinja2 templating engine
 pdf2image                               # PDF to image conversion
-pillow                                  # Image manipulation
+pillow>=12.3.0                          # Image manipulation
 pint                                    # Unit conversion
 pip-licenses                            # License information for installed packages
 ppf.datamatrix                          # Data Matrix barcode generator
-pypdf                                   # PDF manipulation tools
+pypdf>=6.14.2                           # PDF manipulation tools
 python-barcode[images]                  # Barcode generator
 python-dotenv                           # Environment variable management
 pyyaml>=6.0.1                           # YAML parsing
@@ -52,7 +52,7 @@ rapidfuzz                               # Fuzzy string matching
 sentry-sdk                              # Error reporting (optional)
 setuptools                              # Standard dependency
 tablib[xls,xlsx,yaml]                   # Support for XLS and XLSX formats
-weasyprint                              # PDF generation
+weasyprint>=68.0                        # PDF generation
 whitenoise                              # Enhanced static file serving
 
 # OpenTelemetry dependencies
