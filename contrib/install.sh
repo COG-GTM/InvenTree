@@ -56,7 +56,6 @@ root_command() {
   get_distribution
   echo "### Detected distribution: $OS $VER"
   SUPPORTED=true          # is this OS supported?
-  NEEDS_LIBSSL1_1=false   # does this OS need libssl1.1?
 
   DIST_OS=${OS,,}
   DIST_VER=$VER
@@ -65,21 +64,12 @@ root_command() {
       Ubuntu)
           if [[ $VER == "22.04" ]]; then
               SUPPORTED=true
-              NEEDS_LIBSSL1_1=true
-              DIST_VER="20.04"
-          elif [[ $VER == "20.04" ]]; then
-              SUPPORTED=true
           else
               SUPPORTED=false
           fi
           ;;
       "Debian GNU/Linux" | "debian gnu/linux" | Raspbian)
           if [[ $VER == "12" ]]; then
-              DIST_VER="11"
-              SUPPORTED=true
-          elif [[ $VER == "11" ]]; then
-              SUPPORTED=true
-          elif [[ $VER == "10" ]]; then
               SUPPORTED=true
           else
               SUPPORTED=false
@@ -110,15 +100,6 @@ root_command() {
           do_call "sudo apt-get -yqq install $pkg"
       fi
   done
-
-  if [[ $NEEDS_LIBSSL1_1 == "true" ]]; then
-      echo "### Installing libssl1.1"
-
-      echo "deb http://security.ubuntu.com/ubuntu focal-security main" | sudo tee /etc/apt/sources.list.d/focal-security.list
-      do_call "sudo apt-get update"
-      do_call "sudo apt-get install libssl1.1"
-      sudo rm /etc/apt/sources.list.d/focal-security.list
-  fi
 
   echo "### Getting and adding key"
   curl -fsSL https://dl.packager.io/srv/$publisher/InvenTree/key | gpg --dearmor | tee /etc/apt/trusted.gpg.d/pkgr-inventree.gpg > /dev/null
