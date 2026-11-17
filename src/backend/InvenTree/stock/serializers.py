@@ -1693,6 +1693,23 @@ class StockAdjustmentSerializer(serializers.Serializer):
         if len(items) == 0:
             raise ValidationError(_('A list of stock items must be provided'))
 
+        if getattr(self.fields['items'].child, 'limit_to_stock_quantity', False):
+            # The same stock item may appear in multiple rows
+            totals = {}
+
+            for item in items:
+                stock_item = item['pk']
+                total = totals.get(stock_item.pk, 0) + item['quantity']
+                totals[stock_item.pk] = total
+
+                if total > stock_item.quantity:
+                    q = InvenTree.helpers.normalize(stock_item.quantity)
+                    raise ValidationError({
+                        'items': _(
+                            'Total quantity for stock item {item} must not exceed available stock quantity ({q})'
+                        ).format(item=stock_item.pk, q=q)
+                    })
+
         return data
 
 

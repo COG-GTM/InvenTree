@@ -1853,6 +1853,26 @@ class StocktakeTest(StockAPITestCase):
         self.assertEqual(item.quantity, 1234)
         self.assertEqual(item.tracking_info.count(), n_tracking)
 
+        # Multiple rows for the same item are checked against the total
+        response = self.post(
+            url,
+            {
+                'items': [
+                    {'pk': item.pk, 'quantity': 1000},
+                    {'pk': item.pk, 'quantity': 1000},
+                ]
+            },
+            expected_code=400,
+        )
+
+        self.assertIn(
+            'must not exceed available stock quantity (1234)',
+            str(response.data['items']),
+        )
+
+        item.refresh_from_db()
+        self.assertEqual(item.quantity, 1234)
+
         # Removing exactly the available quantity is allowed
         item.delete_on_deplete = False
         item.save()
@@ -1884,6 +1904,28 @@ class StocktakeTest(StockAPITestCase):
         item.refresh_from_db()
         self.assertEqual(item.quantity, 1234)
         self.assertEqual(item.location.pk, 5)
+        self.assertEqual(StockItem.objects.count(), n_items)
+
+        # Multiple rows for the same item are checked against the total
+        response = self.post(
+            url,
+            {
+                'items': [
+                    {'pk': item.pk, 'quantity': 1000},
+                    {'pk': item.pk, 'quantity': 1000},
+                ],
+                'location': 1,
+            },
+            expected_code=400,
+        )
+
+        self.assertIn(
+            'must not exceed available stock quantity (1234)',
+            str(response.data['items']),
+        )
+
+        item.refresh_from_db()
+        self.assertEqual(item.quantity, 1234)
         self.assertEqual(StockItem.objects.count(), n_items)
 
         # Transferring part of the stock is still allowed
