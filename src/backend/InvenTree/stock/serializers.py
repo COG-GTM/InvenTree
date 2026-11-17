@@ -1582,6 +1582,7 @@ class StockAdjustmentItemSerializer(serializers.Serializer):
         # Either True / False / None
         self.require_in_stock = kwargs.pop('require_in_stock', True)
         self.require_non_zero = kwargs.pop('require_non_zero', False)
+        self.limit_to_stock_quantity = kwargs.pop('limit_to_stock_quantity', False)
 
         super().__init__(*args, **kwargs)
 
@@ -1624,6 +1625,23 @@ class StockAdjustmentItemSerializer(serializers.Serializer):
             raise ValidationError(_('Quantity must not be negative'))
 
         return quantity
+
+    def validate(self, data):
+        """Ensure the quantity does not exceed the available stock, if required."""
+        data = super().validate(data)
+
+        if self.limit_to_stock_quantity:
+            stock_item = data['pk']
+
+            if data['quantity'] > stock_item.quantity:
+                q = InvenTree.helpers.normalize(stock_item.quantity)
+                raise ValidationError({
+                    'quantity': _(
+                        'Quantity must not exceed available stock quantity ({q})'
+                    ).format(q=q)
+                })
+
+        return data
 
     batch = serializers.CharField(
         max_length=100,
@@ -1732,6 +1750,8 @@ class StockAddSerializer(StockAdjustmentSerializer):
 class StockRemoveSerializer(StockAdjustmentSerializer):
     """Serializer for removing stock from stock item(s)."""
 
+    items = StockAdjustmentItemSerializer(many=True, limit_to_stock_quantity=True)
+
     def save(self):
         """Remove stock."""
         request = self.context['request']
@@ -1762,7 +1782,9 @@ class StockTransferSerializer(StockAdjustmentSerializer):
 
         fields = ['items', 'notes', 'location']
 
-    items = StockAdjustmentItemSerializer(many=True, require_non_zero=True)
+    items = StockAdjustmentItemSerializer(
+        many=True, require_non_zero=True, limit_to_stock_quantity=True
+    )
 
     location = serializers.PrimaryKeyRelatedField(
         queryset=StockLocation.objects.filter(structural=False),

@@ -1833,6 +1833,70 @@ class StocktakeTest(StockAPITestCase):
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
+    def test_remove_exceeds_quantity(self):
+        """Removing more than the available quantity must be rejected."""
+        url = reverse('api-stock-remove')
+        item = StockItem.objects.get(pk=1234)
+        n_tracking = item.tracking_info.count()
+
+        response = self.post(
+            url, {'items': [{'pk': item.pk, 'quantity': 1235}]}, expected_code=400
+        )
+
+        self.assertIn(
+            'Quantity must not exceed available stock quantity (1234)',
+            str(response.data['items'][0]['quantity']),
+        )
+
+        # The stock item is unchanged, and has not been deleted
+        item.refresh_from_db()
+        self.assertEqual(item.quantity, 1234)
+        self.assertEqual(item.tracking_info.count(), n_tracking)
+
+        # Removing exactly the available quantity is allowed
+        item.delete_on_deplete = False
+        item.save()
+
+        self.post(
+            url, {'items': [{'pk': item.pk, 'quantity': 1234}]}, expected_code=201
+        )
+
+        item.refresh_from_db()
+        self.assertEqual(item.quantity, 0)
+
+    def test_transfer_exceeds_quantity(self):
+        """Transferring more than the available quantity must be rejected."""
+        url = reverse('api-stock-transfer')
+        item = StockItem.objects.get(pk=1234)
+        n_items = StockItem.objects.count()
+
+        response = self.post(
+            url,
+            {'items': [{'pk': item.pk, 'quantity': 1244}], 'location': 1},
+            expected_code=400,
+        )
+
+        self.assertIn(
+            'Quantity must not exceed available stock quantity (1234)',
+            str(response.data['items'][0]['quantity']),
+        )
+
+        item.refresh_from_db()
+        self.assertEqual(item.quantity, 1234)
+        self.assertEqual(item.location.pk, 5)
+        self.assertEqual(StockItem.objects.count(), n_items)
+
+        # Transferring part of the stock is still allowed
+        self.post(
+            url,
+            {'items': [{'pk': item.pk, 'quantity': 234}], 'location': 1},
+            expected_code=201,
+        )
+
+        item.refresh_from_db()
+        self.assertEqual(item.quantity, 1000)
+        self.assertEqual(StockItem.objects.count(), n_items + 1)
+
 
 class StockItemDeletionTest(StockAPITestCase):
     """Tests for stock item deletion via the API."""
