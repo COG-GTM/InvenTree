@@ -1853,21 +1853,20 @@ class StocktakeTest(StockAPITestCase):
         self.assertEqual(item.quantity, 1234)
         self.assertEqual(item.tracking_info.count(), n_tracking)
 
-        # Multiple rows for the same item are checked against the total
+        # The same item may not appear in multiple rows
         response = self.post(
             url,
             {
                 'items': [
-                    {'pk': item.pk, 'quantity': 1000},
-                    {'pk': item.pk, 'quantity': 1000},
+                    {'pk': item.pk, 'quantity': 600},
+                    {'pk': item.pk, 'quantity': 634},
                 ]
             },
             expected_code=400,
         )
 
         self.assertIn(
-            'must not exceed available stock quantity (1234)',
-            str(response.data['items']),
+            f'Duplicate stock item {item.pk} in list', str(response.data['items'])
         )
 
         item.refresh_from_db()
@@ -1906,13 +1905,13 @@ class StocktakeTest(StockAPITestCase):
         self.assertEqual(item.location.pk, 5)
         self.assertEqual(StockItem.objects.count(), n_items)
 
-        # Multiple rows for the same item are checked against the total
+        # The same item may not appear in multiple rows
         response = self.post(
             url,
             {
                 'items': [
-                    {'pk': item.pk, 'quantity': 1000},
-                    {'pk': item.pk, 'quantity': 1000},
+                    {'pk': item.pk, 'quantity': 600},
+                    {'pk': item.pk, 'quantity': 634},
                 ],
                 'location': 1,
             },
@@ -1920,8 +1919,7 @@ class StocktakeTest(StockAPITestCase):
         )
 
         self.assertIn(
-            'must not exceed available stock quantity (1234)',
-            str(response.data['items']),
+            f'Duplicate stock item {item.pk} in list', str(response.data['items'])
         )
 
         item.refresh_from_db()
