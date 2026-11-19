@@ -10,7 +10,9 @@ from django.db.models import (
     ExpressionWrapper,
     F,
     FloatField,
+    OuterRef,
     Q,
+    Subquery,
     Sum,
     Value,
     When,
@@ -1588,9 +1590,19 @@ class BuildLineSerializer(DataImportExportSerializerMixin, InvenTreeModelSeriali
         )
 
         # Annotate the "allocated" quantity
+        # A correlated subquery (rather than a JOIN + GROUP BY) lets the paginator's
+        # COUNT(*) drop every unreferenced annotation instead of re-running them all
+        allocated_query = (
+            BuildItem.objects.filter(build_line=OuterRef('pk'))
+            .order_by()
+            .values('build_line')
+            .annotate(total=Sum('quantity'))
+            .values('total')
+        )
+
         queryset = queryset.annotate(
             allocated=Coalesce(
-                Sum('allocations__quantity'), 0, output_field=models.DecimalField()
+                Subquery(allocated_query), 0, output_field=models.DecimalField()
             )
         )
 
