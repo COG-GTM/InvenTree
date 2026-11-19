@@ -576,6 +576,8 @@ class BuildLineList(BuildLineMixin, DataExportViewMixin, ListCreateAPI):
     filterset_class = BuildLineFilter
     filter_backends = SEARCH_ORDER_FILTER_ALIAS
 
+    ordering = 'pk'
+
     ordering_fields = [
         'part',
         'allocated',
