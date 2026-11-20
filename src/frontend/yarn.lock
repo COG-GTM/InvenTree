@@ -1847,17 +1847,17 @@
   resolved "https://registry.npmjs.org/@tabler/icons/-/icons-3.34.1.tgz"
   integrity sha512-9gTnUvd7Fd/DmQgr3MKY+oJLa1RfNsQo8c/ir3TJAWghOuZXodbtbVp0QBY2DxWuuvrSZFys0HEbv1CoiI5y6A==
 
-"@tanstack/query-core@5.85.9":
-  version "5.85.9"
-  resolved "https://registry.yarnpkg.com/@tanstack/query-core/-/query-core-5.85.9.tgz#69e800f4d1c42ca4a110469229d8ecca409d477a"
-  integrity sha512-5fxb9vwyftYE6KFLhhhDyLr8NO75+Wpu7pmTo+TkwKmMX2oxZDoLwcqGP8ItKSpUMwk3urWgQDZfyWr5Jm9LsQ==
+"@tanstack/query-core@5.108.1":
+  version "5.108.1"
+  resolved "https://registry.yarnpkg.com/@tanstack/query-core/-/query-core-5.108.1.tgz#d9a90082fb6436435b74b3a18896be96a34fc3b2"
+  integrity sha512-GBX6Xsc9E+9eVLLxuM7orQNbssQjpruOCbocBYwT78MjxOWT5I+CWdvEo0N+UM6+oCZEKxuSud1oFLvE3OEmIg==
 
-"@tanstack/react-query@^5.56.2":
-  version "5.85.9"
-  resolved "https://registry.yarnpkg.com/@tanstack/react-query/-/react-query-5.85.9.tgz#d27315b3f327af31237d513e505f3e6a2cad5739"
-  integrity sha512-2T5zgSpcOZXGkH/UObIbIkGmUPQqZqn7esVQFXLOze622h4spgWf5jmvrqAo9dnI13/hyMcNsF1jsoDcb59nJQ==
+"@tanstack/react-query@^5.105.0":
+  version "5.108.1"
+  resolved "https://registry.yarnpkg.com/@tanstack/react-query/-/react-query-5.108.1.tgz#3aabce3fedf32909568a70017473867d50c76d55"
+  integrity sha512-8/p7fpIdmUiKIukQ5ddAMUUSKC7Z8CcgUOBR2r3WqRvMg9Lzc4CXeoFchjfATKvqi23SyYFvesDdOULrvyunNg==
   dependencies:
-    "@tanstack/query-core" "5.85.9"
+    "@tanstack/query-core" "5.108.1"
 
 "@types/argparse@1.0.38":
   version "1.0.38"
